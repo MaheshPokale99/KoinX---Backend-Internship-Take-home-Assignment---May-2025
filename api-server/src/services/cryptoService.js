@@ -1,25 +1,34 @@
 const axios = require('axios');
 const CryptoStats = require('../models/CryptoStats');
 
-const COINS = ['bitcoin', 'ethereum', 'matic-network'];
+const COINGECKO_API_BASE = 'https://api.coingecko.com/api/v3';
 
 async function storeCryptoStats() {
   try {
-    const response = await axios.get(
-      `https://api.coingecko.com/api/v3/simple/price?ids=${COINS.join(',')}&vs_currencies=usd&include_market_cap=true&include_24hr_change=true`
-    );
+    const coins = ['bitcoin', 'ethereum', 'matic-network'];
+    const response = await axios.get(`${COINGECKO_API_BASE}/simple/price`, {
+      params: {
+        ids: coins.join(','),
+        vs_currencies: 'usd',
+        include_market_cap: true,
+        include_24hr_change: true
+      }
+    });
 
-    const stats = COINS.map(coin => ({
-      coin,
-      price: response.data[coin].usd,
-      marketCap: response.data[coin].usd_market_cap,
-      '24hChange': response.data[coin].usd_24h_change
-    }));
+    const updates = coins.map(async (coin) => {
+      const data = response.data[coin];
+      return CryptoStats.create({
+        coin,
+        price: data.usd,
+        marketCap: data.usd_market_cap,
+        change24h: data.usd_24h_change
+      });
+    });
 
-    await CryptoStats.insertMany(stats);
-    return stats;
+    await Promise.all(updates);
+    console.log('Crypto stats updated successfully');
   } catch (error) {
-    console.error('Error fetching crypto stats:', error);
+    console.error('Error storing crypto stats:', error.message);
     throw error;
   }
 }
@@ -27,7 +36,16 @@ async function storeCryptoStats() {
 async function getLatestStats(coin) {
   const stats = await CryptoStats.findOne({ coin })
     .sort({ timestamp: -1 });
-  return stats;
+  
+  if (!stats) {
+    throw new Error('No stats found for the specified coin');
+  }
+
+  return {
+    price: stats.price,
+    marketCap: stats.marketCap,
+    "24hChange": stats.change24h
+  };
 }
 
 async function getPriceDeviation(coin) {
@@ -37,16 +55,16 @@ async function getPriceDeviation(coin) {
     .select('price');
 
   if (stats.length === 0) {
-    return { deviation: 0 };
+    throw new Error('No stats found for the specified coin');
   }
 
   const prices = stats.map(stat => stat.price);
-  const mean = prices.reduce((a, b) => a + b, 0) / prices.length;
-  const squareDiffs = prices.map(price => Math.pow(price - mean, 2));
-  const avgSquareDiff = squareDiffs.reduce((a, b) => a + b, 0) / squareDiffs.length;
-  const deviation = Math.sqrt(avgSquareDiff);
+  const mean = prices.reduce((a, b) => a + b) / prices.length;
+  const squaredDiffs = prices.map(price => Math.pow(price - mean, 2));
+  const variance = squaredDiffs.reduce((a, b) => a + b) / prices.length;
+  const deviation = Math.sqrt(variance);
 
-  return { deviation: parseFloat(deviation.toFixed(2)) };
+  return { deviation: Number(deviation.toFixed(2)) };
 }
 
 module.exports = {

@@ -1,28 +1,50 @@
 require('dotenv').config();
-const { connect } = require('nats');
+const { connect: natsConnect, StringCodec } = require('nats');
 
-async function startWorker() {
+const INTERVAL = 15 * 60 * 1000; // 15 minutes in milliseconds
+const sc = StringCodec();
+
+async function setupNats() {
   try {
-    const nats = await connect({
+    const nc = await natsConnect({
       servers: process.env.NATS_URL || 'nats://localhost:4222'
     });
-    
-    console.log('Worker connected to NATS');
+    console.log('Connected to NATS');
 
-    setInterval(async () => {
-      try {
-        await nats.publish('crypto.update', JSON.stringify({ trigger: 'update' }));
-        console.log('Published update event:', new Date().toISOString());
-      } catch (error) {
-        console.error('Error publishing event:', error);
-      }
-    }, 15 * 60 * 1000); 
+    // Function to publish update event
+    const publishUpdate = () => {
+      const message = { trigger: 'update', timestamp: new Date().toISOString() };
+      nc.publish('crypto.update', sc.encode(JSON.stringify(message)));
+      console.log('Published update event:', message);
+    };
 
-    console.log('Worker started - publishing events every 15 minutes');
-  } catch (err) {
-    console.error('Worker error:', err);
+    // Publish immediately on startup
+    publishUpdate();
+
+    // Schedule regular updates
+    setInterval(publishUpdate, INTERVAL);
+
+    // Handle connection close
+    nc.closed().then(() => {
+      console.log('NATS connection closed');
+      process.exit();
+    });
+
+    // Handle process termination
+    const cleanup = async () => {
+      await nc.drain();
+      process.exit(0);
+    };
+
+    process.on('SIGINT', cleanup);
+    process.on('SIGTERM', cleanup);
+
+  } catch (error) {
+    console.error('NATS connection error:', error);
     process.exit(1);
   }
 }
 
-startWorker(); 
+// Start the worker
+console.log('Starting worker server...');
+setupNats().catch(console.error); 

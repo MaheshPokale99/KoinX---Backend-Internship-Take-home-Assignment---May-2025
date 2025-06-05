@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 
-const cryptoSchema = new mongoose.Schema({
+const cryptoStatsSchema = new mongoose.Schema({
   coin: {
     type: String,
     required: true,
@@ -14,7 +14,7 @@ const cryptoSchema = new mongoose.Schema({
     type: Number,
     required: true
   },
-  '24hChange': {
+  change24h: {
     type: Number,
     required: true
   },
@@ -24,6 +24,7 @@ const cryptoSchema = new mongoose.Schema({
   }
 });
 
-cryptoSchema.index({ coin: 1, timestamp: -1 });
+// Create an index on coin and timestamp for efficient querying
+cryptoStatsSchema.index({ coin: 1, timestamp: -1 });
 
-module.exports = mongoose.model('CryptoStats', cryptoSchema); 
+module.exports = mongoose.model('CryptoStats', cryptoStatsSchema); 
